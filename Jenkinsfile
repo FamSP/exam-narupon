@@ -13,6 +13,13 @@ pipeline {
         skipDefaultCheckout(true)
     }
 
+    tools {
+        dockerTool 'docker' // ชื่อนี้ต้องตรงกับที่ตั้งไว้ในหน้า Global Tool Configuration
+    }
+    options {
+        skipDefaultCheckout(true)
+    }
+
     // Environment variables
     environment {
         DOCKER_HUB_CREDENTIALS_ID = 'exam-narupon'
@@ -106,7 +113,7 @@ pipeline {
             }
             post {
                 success {
-                    sendNotificationToN8n('success', 'Deploy to DEV (Local Docker)', env.IMAGE_TAG, env.DEV_APP_NAME, env.DEV_HOST_PORT)
+                     echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
                 }
             }
         }
@@ -145,7 +152,7 @@ pipeline {
             }
             post {
                 success {
-                    sendNotificationToN8n('success', 'Deploy to PRODUCTION (Local Docker)', env.IMAGE_TAG, env.PROD_APP_NAME, env.PROD_HOST_PORT)
+                     echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
                 }
             }
         }
@@ -175,7 +182,7 @@ pipeline {
             }
             post {
                 success {
-                    sendNotificationToN8n('success', "Rollback ${params.ROLLBACK_TARGET.toUpperCase()}", params.ROLLBACK_TAG, env.TARGET_APP_NAME, env.TARGET_HOST_PORT)
+                    echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
                 }
             }
         }

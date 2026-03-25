@@ -202,7 +202,7 @@ pipeline {
             }
         }
         failure {
-           
+           echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
         }
     }
 }

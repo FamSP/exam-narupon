@@ -5,19 +5,16 @@
 
 
 pipeline {
-    // ใช้ agent any เพราะ build จะทำงานบน Jenkins controller/agent (Linux)
     agent any
 
-    // กันเช็คเอาต์ซ้ำซ้อน (ตามแนวทาง Express)
-    options {
-        skipDefaultCheckout(true)
+    tools {
+        dockerTool 'docker' 
     }
 
-    tools {
-        dockerTool 'docker' // ชื่อนี้ต้องตรงกับที่ตั้งไว้ในหน้า Global Tool Configuration
-    }
     options {
+        // รวมทุกอย่างไว้ที่นี่ที่เดียว
         skipDefaultCheckout(true)
+        // buildDiscarder(logRotator(numToKeepStr: '10')) // ถ้ามีอันอื่นให้ใส่ต่อกันที่นี่
     }
 
     // Environment variables

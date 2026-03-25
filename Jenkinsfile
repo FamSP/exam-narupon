@@ -5,22 +5,25 @@
 
 
 pipeline {
+    // ใช้ agent any เพราะ build จะทำงานบน Jenkins controller/agent (Linux)
     agent any
 
-    tools {
-        dockerTool 'docker' 
+    // กันเช็คเอาต์ซ้ำซ้อน (ตามแนวทาง Express)
+    options {
+        skipDefaultCheckout(true)
     }
 
+    tools {
+        dockerTool 'docker' // ชื่อนี้ต้องตรงกับที่ตั้งไว้ในหน้า Global Tool Configuration
+    }
     options {
-        // รวมทุกอย่างไว้ที่นี่ที่เดียว
         skipDefaultCheckout(true)
-        // buildDiscarder(logRotator(numToKeepStr: '10')) // ถ้ามีอันอื่นให้ใส่ต่อกันที่นี่
     }
 
     // Environment variables
     environment {
         DOCKER_HUB_CREDENTIALS_ID = 'exam-narupon'
-        DOCKER_REPO               = "famnekon/exam-narupon"
+        DOCKER_REPO               = "famnekon/flask-docker-app"
 
         // จำลอง DEV/PROD บน Local
         DEV_APP_NAME              = "flask-app-dev"
@@ -37,15 +40,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Checkout') {
-    steps {
-        // เพิ่มคำสั่งนี้เพื่อแก้ปัญหา Dubious Ownership
-        sh "git config --global --add safe.directory ${WORKSPACE}"
-        echo "Checking out code..."
-        checkout scm
-    }
-}
         // Stage 1: Checkout
         stage('Checkout') {
             when { expression { params.ACTION == 'Build & Deploy' } }

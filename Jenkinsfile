@@ -37,6 +37,15 @@ pipeline {
     }
 
     stages {
+
+        stage('Checkout') {
+    steps {
+        // เพิ่มคำสั่งนี้เพื่อแก้ปัญหา Dubious Ownership
+        sh "git config --global --add safe.directory ${WORKSPACE}"
+        echo "Checking out code..."
+        checkout scm
+    }
+}
         // Stage 1: Checkout
         stage('Checkout') {
             when { expression { params.ACTION == 'Build & Deploy' } }

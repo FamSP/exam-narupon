@@ -12,24 +12,18 @@ pipeline {
     }
 
     options {
-        // รวมทุกอย่างไว้ที่นี่ที่เดียว
         skipDefaultCheckout(true)
-        // buildDiscarder(logRotator(numToKeepStr: '10')) // ถ้ามีอันอื่นให้ใส่ต่อกันที่นี่
     }
 
-    // Environment variables
     environment {
         DOCKER_HUB_CREDENTIALS_ID = 'exam-narupon'
         DOCKER_REPO               = "famnekon/flask-docker-app"
-
-        // จำลอง DEV/PROD บน Local
         DEV_APP_NAME              = "flask-app-dev"
         DEV_HOST_PORT             = "5001"
         PROD_APP_NAME             = "flask-app-prod"
         PROD_HOST_PORT            = "5000"
     }
 
-    // Input parameters (Build & Deploy หรือ Rollback)
     parameters {
         choice(name: 'ACTION', choices: ['Build & Deploy', 'Rollback'], description: 'เลือก Action ที่ต้องการ')
         string(name: 'ROLLBACK_TAG', defaultValue: '', description: 'สำหรับ Rollback: ใส่ Image Tag (เช่น Git Hash หรือ dev-123)')
@@ -37,25 +31,20 @@ pipeline {
     }
 
     stages {
-
-        stage('Checkout') {
-    steps {
-        // เพิ่มคำสั่งนี้เพื่อแก้ปัญหา Dubious Ownership
-        sh "git config --global --add safe.directory ${WORKSPACE}"
-        echo "Checking out code..."
-        checkout scm
-    }
-}
-        // Stage 1: Checkout
+        // Stage 1: Checkout (รวมการแก้ปัญหา Git Ownership)
         stage('Checkout') {
             when { expression { params.ACTION == 'Build & Deploy' } }
             steps {
+                script {
+                    // แก้ปัญหา fatal: detected dubious ownership
+                    sh "git config --global --add safe.directory ${WORKSPACE}"
+                }
                 echo "Checking out code..."
                 checkout scm
             }
         }
 
-        // Stage 2: Install & Test (ใช้ Python container เหมือนแนวคิด Express/Node test)
+        // Stage 2: Install & Test
         stage('Install & Test') {
             when { expression { params.ACTION == 'Build & Deploy' } }
             steps {
@@ -76,7 +65,7 @@ pipeline {
             }
         }
 
-        // Stage 3: Build & Push Docker Image (Push latest เฉพาะ main)
+        // Stage 3: Build & Push Docker Image
         stage('Build & Push Docker Image') {
             when { expression { params.ACTION == 'Build & Deploy' } }
             steps {
@@ -98,7 +87,7 @@ pipeline {
             }
         }
 
-        // Deploy to DEV (Local Docker) — สำหรับ branch develop
+        // Stage 4: Deploy to DEV
         stage('Deploy to DEV (Local Docker)') {
             when {
                 expression { params.ACTION == 'Build & Deploy' }
@@ -107,24 +96,23 @@ pipeline {
             steps {
                 script {
                     def deployCmd = """
-                            echo "Deploying container ${DEV_APP_NAME} from latest image..."
+                            echo "Deploying container ${DEV_APP_NAME} from image ${env.IMAGE_TAG}..."
                             docker pull ${DOCKER_REPO}:${env.IMAGE_TAG}
                             docker stop ${DEV_APP_NAME} || true
                             docker rm ${DEV_APP_NAME} || true
                             docker run -d --name ${DEV_APP_NAME} -p ${DEV_HOST_PORT}:5000 ${DOCKER_REPO}:${env.IMAGE_TAG}
-                            docker ps --filter name=${DEV_APP_NAME} --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}"
                         """
                     sh deployCmd
                 }
             }
             post {
                 success {
-                     echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
+                    sendNotificationToN8n('success', 'Deploy to DEV', env.IMAGE_TAG, env.DEV_APP_NAME, env.DEV_HOST_PORT)
                 }
             }
         }
 
-        // Approval ก่อน Deploy ไป PROD
+        // Stage 5: Approval
         stage('Approval for Production') {
             when {
                 expression { params.ACTION == 'Build & Deploy' }
@@ -132,12 +120,12 @@ pipeline {
             }
             steps {
                 timeout(time: 1, unit: 'HOURS') {
-                    input message: "Deploy image tag '${env.IMAGE_TAG}' to PRODUCTION (Local Docker on port ${PROD_HOST_PORT})?"
+                    input message: "Deploy image tag '${env.IMAGE_TAG}' to PRODUCTION?"
                 }
             }
         }
 
-        // Deploy to PROD (Local Docker) — สำหรับ branch main
+        // Stage 6: Deploy to PROD
         stage('Deploy to PRODUCTION (Local Docker)') {
             when {
                 expression { params.ACTION == 'Build & Deploy' }
@@ -146,76 +134,64 @@ pipeline {
             steps {
                 script {
                     def deployCmd = """
-                            echo "Deploying container ${PROD_APP_NAME} from latest image..."
+                            echo "Deploying container ${PROD_APP_NAME} from image ${env.IMAGE_TAG}..."
                             docker pull ${DOCKER_REPO}:${env.IMAGE_TAG}
                             docker stop ${PROD_APP_NAME} || true
                             docker rm ${PROD_APP_NAME} || true
                             docker run -d --name ${PROD_APP_NAME} -p ${PROD_HOST_PORT}:5000 ${DOCKER_REPO}:${env.IMAGE_TAG}
-                            docker ps --filter name=${PROD_APP_NAME} --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}"
                         """
                     sh deployCmd
                 }
             }
             post {
                 success {
-                     echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
+                    sendNotificationToN8n('success', 'Deploy to PRODUCTION', env.IMAGE_TAG, env.PROD_APP_NAME, env.PROD_HOST_PORT)
                 }
             }
         }
 
-        // Rollback เมื่อเลือก ACTION = Rollback
+        // Stage 7: Rollback
         stage('Execute Rollback') {
             when { expression { params.ACTION == 'Rollback' } }
             steps {
                 script {
                     if (params.ROLLBACK_TAG.trim().isEmpty()) {
-                        error "เมื่อเลือก Rollback กรุณาระบุ 'ROLLBACK_TAG'"
+                        error "กรุณาระบุ ROLLBACK_TAG"
                     }
-
-                    env.TARGET_APP_NAME  = (params.ROLLBACK_TARGET == 'dev') ? env.DEV_APP_NAME  : env.PROD_APP_NAME
-                    env.TARGET_HOST_PORT = (params.ROLLBACK_TARGET == 'dev') ? env.DEV_HOST_PORT : env.PROD_HOST_PORT
+                    def targetApp = (params.ROLLBACK_TARGET == 'dev') ? env.DEV_APP_NAME : env.PROD_APP_NAME
+                    def targetPort = (params.ROLLBACK_TARGET == 'dev') ? env.DEV_HOST_PORT : env.PROD_HOST_PORT
                     def imageToDeploy = "${DOCKER_REPO}:${params.ROLLBACK_TAG.trim()}"
-
-                    echo "ROLLING BACK ${params.ROLLBACK_TARGET.toUpperCase()} to image: ${imageToDeploy}"
 
                     sh """
                         docker pull ${imageToDeploy}
-                        docker stop ${env.TARGET_APP_NAME} || true
-                        docker rm ${env.TARGET_APP_NAME} || true
-                        docker run -d --name ${env.TARGET_APP_NAME} -p ${env.TARGET_HOST_PORT}:5000 ${imageToDeploy}
+                        docker stop ${targetApp} || true
+                        docker rm ${targetApp} || true
+                        docker run -d --name ${targetApp} -p ${targetPort}:5000 ${imageToDeploy}
                     """
-                }
-            }
-            post {
-                success {
-                    echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
+                    sendNotificationToN8n('success', "Rollback ${params.ROLLBACK_TARGET}", params.ROLLBACK_TAG, targetApp, targetPort)
                 }
             }
         }
     }
 
-    // Post actions
     post {
         always {
             script {
-                if (params.ACTION == 'Build & Deploy') {
-                    echo "Cleaning up Docker images on agent..."
-                    try {
-                        sh """
-                            docker image rm -f ${DOCKER_REPO}:${env.IMAGE_TAG} || true
-                            docker image rm -f ${DOCKER_REPO}:latest || true
-                        """
-                    } catch (err) {
-                        echo "Could not clean up images, but continuing..."
-                    }
+                if (params.ACTION == 'Build & Deploy' && env.IMAGE_TAG) {
+                    echo "Cleaning up Docker images..."
+                    sh "docker image rm -f ${DOCKER_REPO}:${env.IMAGE_TAG} || true"
                 }
-                // ส่วนของการลบ Workspace
-                echo "Cleaning up workspace..."
                 cleanWs()
             }
         }
         failure {
-           echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
+            echo 'การ Build ล้มเหลว กรุณาตรวจสอบ Console Output'
         }
     }
+}
+
+// ฟังก์ชันส่ง Notification (ต้องอยู่นอก pipeline block)
+def sendNotificationToN8n(status, stage, tag, appName, port) {
+    echo "NOTIFICATION: Stage [${stage}] is ${status}. (Image: ${tag}, App: ${appName}, Port: ${port})"
+    // คุณสามารถเพิ่มโค้ด httpRequest เพื่อส่งไป N8N จริงๆ ได้ที่นี่
 }
